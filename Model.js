@@ -44,8 +44,30 @@ function parseConfig(raw) {
     screensaver: normalizedSeconds(parsed.screensaver, 150, true),
     display: normalizedSeconds(parsed.display, 0, true),
     lock: normalizedSeconds(parsed.lock, 300, true),
-    sleep: normalizedSeconds(parsed.sleep, 0, true)
+    sleep: normalizedSeconds(parsed.sleep, 0, true),
+    sleepAction: sleepAction(parsed.sleepAction)
   }
+}
+
+var sleepActions = [
+  { id: "suspend", label: "Suspend" },
+  { id: "hibernate", label: "Hibernate" },
+  { id: "suspend-then-hibernate", label: "Suspend → Hibernate" },
+  { id: "hybrid-sleep", label: "Hybrid sleep" }
+]
+
+function sleepAction(value) {
+  var candidate = String(value || "")
+  for (var i = 0; i < sleepActions.length; i++)
+    if (sleepActions[i].id === candidate) return candidate
+  return "suspend"
+}
+
+function sleepActionLabel(value) {
+  var candidate = sleepAction(value)
+  for (var i = 0; i < sleepActions.length; i++)
+    if (sleepActions[i].id === candidate) return sleepActions[i].label
+  return "Suspend"
 }
 
 function formatDuration(seconds) {
@@ -86,9 +108,9 @@ function customSeconds(hours, minutes) {
   return (safeHours * 60 + safeMinutes) * 60
 }
 
-function statusSummary(screensaver, display, lock, sleep) {
+function statusSummary(screensaver, display, lock, sleep, action) {
   return "Screen " + formatDuration(screensaver)
     + " · Displays " + formatDuration(display)
     + " · Lock " + formatDuration(lock)
-    + " · Sleep " + formatDuration(sleep)
+    + " · " + sleepActionLabel(action) + " " + formatDuration(sleep)
 }

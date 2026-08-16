@@ -1,8 +1,8 @@
 {
-  "name": "sandman",
-  "version": "0.7.0",
+  "name": "omarchy-sleep-guardian-plugin",
+  "version": "1.0.0",
   "private": true,
-  "description": "Set when your screen rests, locks, and sleeps.",
+  "description": "Omarchy idle controls with suspend, hibernate, hybrid sleep, and suspend-then-hibernate.",
   "scripts": {
     "test": "node --test && python3 -m unittest discover -s test -p 'test_*.py'"
   },

@@ -6,7 +6,7 @@ import "Model.js" as Model
 
 Panel {
   id: root
-  moduleName: "lgse.sandman"
+  moduleName: "thenailedone.sleep-guardian"
   manageIpc: false
 
   property var anchorItem: null
@@ -19,6 +19,7 @@ Panel {
   readonly property int displaySeconds: sandmanService ? sandmanService.displaySeconds : 0
   readonly property int lockSeconds: sandmanService ? sandmanService.lockSeconds : 300
   readonly property int sleepSeconds: sandmanService ? sandmanService.sleepSeconds : 0
+  readonly property string sleepAction: sandmanService ? sandmanService.sleepAction : "suspend"
   readonly property bool saving: sandmanService ? sandmanService.saving : false
   readonly property bool screensaverUsesPreset: Model.isPreset(screensaverSeconds, Model.screensaverPresets)
   readonly property bool displayUsesPreset: Model.isPreset(displaySeconds, Model.displayPresets)
@@ -127,6 +128,10 @@ Panel {
     if (root.sandmanService) root.sandmanService.setSleep(value)
   }
 
+  function setSleepAction(value) {
+    if (root.sandmanService) root.sandmanService.setSleepAction(value)
+  }
+
   function selectSleepPreset(value) {
     root.customSleepEditorOpen = false
     root.setSleep(value)
@@ -197,7 +202,7 @@ Panel {
             spacing: Style.space(2)
 
             Text {
-              text: "Sandman"
+              text: "Sleep Guardian"
               color: root.contentForeground
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.title
@@ -205,7 +210,7 @@ Panel {
             }
 
             Text {
-              text: Model.statusSummary(root.screensaverSeconds, root.displaySeconds, root.lockSeconds, root.sleepSeconds)
+              text: Model.statusSummary(root.screensaverSeconds, root.displaySeconds, root.lockSeconds, root.sleepSeconds, root.sleepAction)
               color: Util.alpha(root.contentForeground, 0.64)
               font.family: root.contentFontFamily
               font.pixelSize: Style.font.caption
@@ -552,10 +557,46 @@ Panel {
 
           Text {
             width: parent.width
-            text: "Suspend the computer after inactivity"
+            text: "Choose the power state, then set when inactivity triggers it"
             color: Util.alpha(root.contentForeground, 0.64)
             font.family: root.contentFontFamily
             font.pixelSize: Style.font.caption
+          }
+
+          Grid {
+            id: actionGrid
+            width: parent.width
+            columns: 2
+            columnSpacing: Style.space(6)
+            rowSpacing: Style.space(6)
+
+            Repeater {
+              model: Model.sleepActions
+
+              Button {
+                required property var modelData
+                width: (actionGrid.width - actionGrid.columnSpacing) / 2
+                text: modelData.label
+                selected: root.sleepAction === modelData.id
+                enabled: !root.saving && root.sandmanService
+                  && root.sandmanService.actionAvailable(modelData.id)
+                focusable: true
+                bordered: true
+                foreground: root.contentForeground
+                fontFamily: root.contentFontFamily
+                onClicked: root.setSleepAction(modelData.id)
+              }
+            }
+          }
+
+          Text {
+            visible: root.sleepAction === "suspend-then-hibernate"
+            width: parent.width
+            text: "Suspends first, then hibernates using systemd's configured HibernateDelaySec (2 hours by default when no delay is configured)."
+            color: Util.alpha(root.contentForeground, 0.64)
+            font.family: root.contentFontFamily
+            font.pixelSize: Style.font.caption
+            wrapMode: Text.WordWrap
           }
 
           Grid {

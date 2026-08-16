@@ -1,49 +1,35 @@
-# Sandman
+# Sleep Guardian
 
-Set when your screen rests, locks, and sleeps from the Omarchy Quattro bar.
+An Omarchy Quattro idle manager based on Pierre Berube's MIT-licensed
+[Sandman](https://github.com/lgse/sandman). It retains Sandman's screen-saver,
+display-off, auto-lock, and custom idle timers, and adds selectable systemd power
+actions:
 
-![Sandman screensaver, auto-lock, and sleep settings](preview.png)
+- Suspend
+- Hibernate
+- Suspend then hibernate
+- Hybrid sleep
 
-Sandman provides four simple controls:
-
-- **Screen saver** — starts the screen saver after the selected period of inactivity.
-- **Displays off** — turns the displays off (DPMS) after the selected period of inactivity while respecting idle inhibitors.
-- **Auto-lock** — locks the session after the selected period of inactivity.
-- **Sleep** — suspends the computer after the selected period of inactivity while respecting idle inhibitors.
-
-Each setting offers presets, Off, and a custom hours-and-minutes timeout. Omarchy requires positive screen-saver and lock values, so Sandman simulates Off with safe seven-day timeouts while displaying and persisting Off as `0`.
+Unsupported actions are disabled after querying `systemd-logind`; an invalid or
+manually corrupted action falls back to suspend. Idle inhibitors are respected,
+configuration writes are atomic, unrelated Omarchy settings are preserved, and
+the power timer is off by default.
 
 ## Install
 
 ```sh
-omarchy plugin add https://github.com/lgse/sandman.git --enable
+omarchy plugin add https://github.com/thenailedone/omarchy-sleep-guardian-plugin.git --enable
 ```
 
-If needed, add it to the bar explicitly:
+Click the Sleep Guardian icon in the bar, choose an available power action, and
+then choose a timeout. `Suspend → Hibernate` invokes systemd's native
+`suspend-then-hibernate` mode. Its transition delay comes from the system-wide
+`HibernateDelaySec=` setting; when no delay is configured systemd may use battery
+information or its documented two-hour default.
 
-```sh
-omarchy bar plugin add lgse.sandman --section right
-```
-
-## Usage
-
-Click the Zzz icon in the bar and choose a timeout for each stage. Presets apply immediately; Custom accepts hours and minutes and applies on confirmation for screen saver, displays off, auto-lock, and sleep. Existing values that do not match a preset—including Omarchy's 2½-minute screen-saver default—open as Custom. Changes survive shell reloads and reboots.
-
-Sandman stores its state in `~/.config/omarchy/sandman.json`. The effective screen-saver and auto-lock values remain in Omarchy's standard `~/.config/omarchy/shell.json`; the displays-off and sleep timers are handled by Sandman itself and are not written there.
-
-## How displays off works
-
-Sandman uses Quickshell's idle monitor with inhibitor support and turns the displays off through Hyprland's `dpms` dispatcher. Applications holding an idle inhibitor can prevent the timer from firing, and any key press or mouse movement turns the displays back on.
-
-## How sleep works
-
-Sandman uses Quickshell's idle monitor with inhibitor support and requests suspend through `systemctl suspend`. Applications holding an idle inhibitor can prevent the timer from firing, and system-level sleep inhibitors can reject the suspend request.
-
-## Requirements
-
-- Omarchy Quattro
-- Python 3
-- systemd
+State is stored in `~/.config/omarchy/sleep-guardian.json`. Screen-saver and lock
+values are also merged into `~/.config/omarchy/shell.json`; display and power
+timers remain plugin-owned.
 
 ## Validate
 
@@ -53,30 +39,19 @@ omarchy plugin validate .
 qmllint -I "$OMARCHY_PATH/shell" BarWidget.qml Panel.qml Service.qml
 ```
 
+The tests never invoke a sleep command.
+
 ## Remove
 
-```sh
-omarchy plugin remove lgse.sandman
-rm -f ~/.config/omarchy/sandman.json
-```
-
-Removing Sandman does not revert the screen-saver and lock timeouts already written to `shell.json`.
-
-This matters if either setting was left **Off**. Off is stored in `shell.json` as a
-seven-day timeout, so removing Sandman while auto-lock is Off leaves a machine that
-effectively never locks, with no Sandman UI left to notice it. Set anything you want
-back on *before* removing, or restore Omarchy's defaults afterwards:
+Set screen saver and lock to the values you want to retain, then run:
 
 ```sh
-python3 - <<'PY'
-import json, pathlib
-path = pathlib.Path.home() / ".config/omarchy/shell.json"
-config = json.loads(path.read_text())
-config.setdefault("idle", {}).update({"screensaver": 150, "lock": 300})
-path.write_text(json.dumps(config, indent=2) + "\n")
-PY
+omarchy plugin remove thenailedone.sleep-guardian
 ```
+
+Removing the plugin does not revert screen-saver or lock values already stored in
+Omarchy's `shell.json`.
 
 ## License
 
-MIT
+MIT. The upstream Sandman copyright and license are retained in `LICENSE`.

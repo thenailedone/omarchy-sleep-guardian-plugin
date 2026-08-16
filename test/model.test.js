@@ -12,11 +12,11 @@ vm.runInContext(source, model);
 test("parseConfig normalizes persisted values", () => {
   assert.deepEqual(
     JSON.parse(JSON.stringify(model.parseConfig('{"screensaver":600,"display":120,"lock":900,"sleep":3600}'))),
-    { screensaver: 600, display: 120, lock: 900, sleep: 3600 }
+    { screensaver: 600, display: 120, lock: 900, sleep: 3600, sleepAction: "suspend" }
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(model.parseConfig("broken"))),
-    { screensaver: 150, display: 0, lock: 300, sleep: 0 }
+    { screensaver: 150, display: 0, lock: 300, sleep: 0, sleepAction: "suspend" }
   );
 });
 
@@ -58,7 +58,12 @@ test("parseConfig bounds oversized persisted values", () => {
 
 test("statusSummary includes all stages", () => {
   assert.equal(
-    model.statusSummary(300, 120, 600, 1800),
-    "Screen 5 min · Displays 2 min · Lock 10 min · Sleep 30 min"
+    model.statusSummary(300, 120, 600, 1800, "suspend-then-hibernate"),
+    "Screen 5 min · Displays 2 min · Lock 10 min · Suspend → Hibernate 30 min"
   );
+});
+
+test("sleep action is validated fail-safe", () => {
+  assert.equal(model.sleepAction("hibernate"), "hibernate");
+  assert.equal(model.sleepAction("shutdown"), "suspend");
 });

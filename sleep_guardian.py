@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Persist Sandman settings without discarding unrelated Omarchy config."""
+"""Persist Sleep Guardian settings without discarding unrelated Omarchy config."""
 
 from __future__ import annotations
 
 import argparse
 import json
 import os
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -15,6 +16,8 @@ DEFAULT_SCREENSAVER = 150
 DEFAULT_DISPLAY = 0
 DEFAULT_LOCK = 300
 DEFAULT_SLEEP = 0
+DEFAULT_SLEEP_ACTION = "suspend"
+SLEEP_ACTIONS = ("suspend", "hibernate", "suspend-then-hibernate", "hybrid-sleep")
 OFF_TIMEOUT = 7 * 24 * 60 * 60
 MAX_TIMEOUT = OFF_TIMEOUT
 
@@ -29,8 +32,13 @@ def shell_path() -> Path:
 
 
 def config_path() -> Path:
-    override = os.environ.get("SANDMAN_CONFIG_PATH")
-    return Path(override).expanduser() if override else Path.home() / ".config/omarchy/sandman.json"
+    # SANDMAN_CONFIG_PATH remains as a test/migration compatibility alias.
+    override = os.environ.get("SLEEP_GUARDIAN_CONFIG_PATH") or os.environ.get("SANDMAN_CONFIG_PATH")
+    return Path(override).expanduser() if override else Path.home() / ".config/omarchy/sleep-guardian.json"
+
+
+def sleep_action(value: Any) -> str:
+    return value if isinstance(value, str) and value in SLEEP_ACTIONS else DEFAULT_SLEEP_ACTION
 
 
 def read_json(
@@ -108,7 +116,7 @@ def atomic_write(path: Path, value: dict[str, Any]) -> None:
         temporary_path.unlink(missing_ok=True)
 
 
-def current_config() -> dict[str, int]:
+def current_config() -> dict[str, Any]:
     # shell.json belongs to Omarchy and holds unrelated settings, so it is read
     # strictly. sandman.json is ours and fully derivable, so a damaged copy may
     # be rebuilt from defaults.
@@ -132,17 +140,18 @@ def current_config() -> dict[str, int]:
         "display": seconds(stored.get("display"), DEFAULT_DISPLAY, allow_off=True),
         "lock": stored_lock,
         "sleep": seconds(stored.get("sleep"), DEFAULT_SLEEP, allow_off=True),
+        "sleepAction": sleep_action(stored.get("sleepAction")),
     }
 
 
-def initialize() -> dict[str, int]:
+def initialize() -> dict[str, Any]:
     config = current_config()
     # Always persist the normalized shape so existing installs gain new fields.
     atomic_write(config_path(), config)
     return config
 
 
-def apply_idle_config(config: dict[str, int]) -> None:
+def apply_idle_config(config: dict[str, Any]) -> None:
     shell = read_json(shell_path(), {"version": 1}, strict=True)
     idle = shell.get("idle") if isinstance(shell.get("idle"), dict) else {}
     lock_timeout = config["lock"] if config["lock"] > 0 else OFF_TIMEOUT
@@ -159,7 +168,7 @@ def apply_idle_config(config: dict[str, int]) -> None:
     atomic_write(shell_path(), shell)
 
 
-def set_screensaver(value: int) -> dict[str, int]:
+def set_screensaver(value: int) -> dict[str, Any]:
     config = current_config()
     # Fall back to the default, never to DEFAULT_SLEEP: with allow_off a 0
     # fallback would turn an unusable value into "Off" and silently stand the
@@ -170,7 +179,7 @@ def set_screensaver(value: int) -> dict[str, int]:
     return config
 
 
-def set_lock(value: int) -> dict[str, int]:
+def set_lock(value: int) -> dict[str, Any]:
     config = current_config()
     # Same reasoning as set_screensaver, and it matters more here: a 0 fallback
     # would disable auto-lock on malformed input.
@@ -180,7 +189,7 @@ def set_lock(value: int) -> dict[str, int]:
     return config
 
 
-def set_display(value: int) -> dict[str, int]:
+def set_display(value: int) -> dict[str, Any]:
     value = seconds(value, DEFAULT_DISPLAY, allow_off=True)
     config = current_config()
     config["display"] = value
@@ -188,12 +197,44 @@ def set_display(value: int) -> dict[str, int]:
     return config
 
 
-def set_sleep(value: int) -> dict[str, int]:
+def set_sleep(value: int) -> dict[str, Any]:
     value = seconds(value, DEFAULT_SLEEP, allow_off=True)
     config = current_config()
     config["sleep"] = value
     atomic_write(config_path(), config)
     return config
+
+
+def set_sleep_action(value: str) -> dict[str, Any]:
+    if value not in SLEEP_ACTIONS:
+        raise ConfigError(f"Unsupported sleep action: {value}")
+    config = current_config()
+    config["sleepAction"] = value
+    atomic_write(config_path(), config)
+    return config
+
+
+def capabilities() -> dict[str, Any]:
+    methods = {
+        "suspend": "CanSuspend",
+        "hibernate": "CanHibernate",
+        "suspend-then-hibernate": "CanSuspendThenHibernate",
+        "hybrid-sleep": "CanHybridSleep",
+    }
+    result: dict[str, Any] = {}
+    busctl = os.environ.get("SLEEP_GUARDIAN_BUSCTL", "busctl")
+    for action, method in methods.items():
+        try:
+            completed = subprocess.run(
+                [busctl, "call", "org.freedesktop.login1", "/org/freedesktop/login1",
+                 "org.freedesktop.login1.Manager", method],
+                check=False, capture_output=True, text=True, timeout=5,
+            )
+            answer = completed.stdout.strip().split()[-1].strip('"') if completed.returncode == 0 else "no"
+        except (OSError, subprocess.TimeoutExpired):
+            answer = "no"
+        result[action] = {"available": answer in ("yes", "challenge"), "answer": answer}
+    return result
 
 
 def timeout(raw: str) -> int:
@@ -219,6 +260,7 @@ def parser() -> argparse.ArgumentParser:
     commands = result.add_subparsers(dest="command", required=True)
     commands.add_parser("init")
     commands.add_parser("get")
+    commands.add_parser("capabilities")
     screensaver = commands.add_parser("set-screensaver")
     screensaver.add_argument("seconds", type=timeout)
     display = commands.add_parser("set-display")
@@ -227,6 +269,8 @@ def parser() -> argparse.ArgumentParser:
     lock.add_argument("seconds", type=timeout)
     sleep = commands.add_parser("set-sleep")
     sleep.add_argument("seconds", type=timeout)
+    action = commands.add_parser("set-sleep-action")
+    action.add_argument("action", choices=SLEEP_ACTIONS)
     return result
 
 
@@ -237,16 +281,20 @@ def main() -> int:
             config = initialize()
         elif args.command == "get":
             config = current_config()
+        elif args.command == "capabilities":
+            config = capabilities()
         elif args.command == "set-screensaver":
             config = set_screensaver(args.seconds)
         elif args.command == "set-display":
             config = set_display(args.seconds)
         elif args.command == "set-lock":
             config = set_lock(args.seconds)
-        else:
+        elif args.command == "set-sleep":
             config = set_sleep(args.seconds)
+        else:
+            config = set_sleep_action(args.action)
     except ConfigError as error:
-        print(f"sandman: {error}", file=sys.stderr)
+        print(f"sleep-guardian: {error}", file=sys.stderr)
         return 1
     print(json.dumps(config, separators=(",", ":")))
     return 0

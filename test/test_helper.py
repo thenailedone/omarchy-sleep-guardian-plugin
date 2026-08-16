@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-HELPER = ROOT / "sandman.py"
+HELPER = ROOT / "sleep_guardian.py"
 
 
 class SandmanHelperTest(unittest.TestCase):
@@ -37,7 +37,11 @@ class SandmanHelperTest(unittest.TestCase):
             text=True,
             capture_output=True,
         )
-        return json.loads(completed.stdout)
+        result = json.loads(completed.stdout)
+        # Existing timeout tests focus on the four numeric stages.
+        if isinstance(result, dict):
+            result.pop("sleepAction", None)
+        return result
 
     def run_helper_expecting_failure(self, *arguments):
         completed = subprocess.run(
@@ -53,7 +57,7 @@ class SandmanHelperTest(unittest.TestCase):
     def test_init_inherits_omarchy_idle_settings_and_disables_sleep(self):
         expected = {"screensaver": 150, "display": 0, "lock": 300, "sleep": 0}
         self.assertEqual(self.run_helper("init"), expected)
-        self.assertEqual(json.loads(self.config.read_text()), expected)
+        self.assertEqual(json.loads(self.config.read_text()), {**expected, "sleepAction": "suspend"})
 
     def test_init_migrates_existing_config_to_include_new_fields(self):
         self.config.write_text(
@@ -63,7 +67,7 @@ class SandmanHelperTest(unittest.TestCase):
 
         expected = {"screensaver": 150, "display": 0, "lock": 300, "sleep": 3600}
         self.assertEqual(self.run_helper("init"), expected)
-        self.assertEqual(json.loads(self.config.read_text()), expected)
+        self.assertEqual(json.loads(self.config.read_text()), {**expected, "sleepAction": "suspend"})
 
     def test_screensaver_preserves_lock_and_unrelated_config(self):
         self.run_helper("init")
@@ -124,7 +128,7 @@ class SandmanHelperTest(unittest.TestCase):
         completed = self.run_helper_expecting_failure("set-lock", "900")
 
         # A controlled message, not a UnicodeDecodeError traceback.
-        self.assertIn("sandman:", completed.stderr)
+        self.assertIn("sleep-guardian:", completed.stderr)
         self.assertNotIn("Traceback", completed.stderr)
         self.assertEqual(self.shell.read_bytes(), damaged)
 
@@ -190,6 +194,17 @@ class SandmanHelperTest(unittest.TestCase):
             self.run_helper("init"),
             {"screensaver": 150, "display": 0, "lock": 300, "sleep": 0},
         )
+
+
+    def test_sleep_action_is_persisted_and_invalid_actions_are_rejected(self):
+        self.run_helper("init")
+        completed = subprocess.run(
+            ["python3", str(HELPER), "set-sleep-action", "suspend-then-hibernate"],
+            env=self.environment, check=True, text=True, capture_output=True,
+        )
+        self.assertEqual(json.loads(completed.stdout)["sleepAction"], "suspend-then-hibernate")
+        self.run_helper_expecting_failure("set-sleep-action", "shutdown")
+        self.assertEqual(json.loads(self.config.read_text())["sleepAction"], "suspend-then-hibernate")
 
 
 if __name__ == "__main__":

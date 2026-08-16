@@ -9,22 +9,24 @@ Item {
   id: root
 
   property var shell: null
-  property var configState: ({ screensaver: 150, display: 0, lock: 300, sleep: 0 })
+  property var configState: ({ screensaver: 150, display: 0, lock: 300, sleep: 0, sleepAction: "suspend" })
+  property var capabilityState: ({})
   property bool saving: false
   property string lastError: ""
-  property bool suspendPending: false
+  property bool sleepPending: false
   property bool displaysOff: false
   property bool idleCycleRunning: false
   property var screensaverWindows: ({})
   property int screensaverWindowCount: 0
 
   readonly property string home: Quickshell.env("HOME")
-  readonly property string configPath: home + "/.config/omarchy/sandman.json"
+  readonly property string configPath: home + "/.config/omarchy/sleep-guardian.json"
   readonly property string screensaverClass: "org.omarchy.screensaver"
   readonly property int screensaverSeconds: Model.normalizedSeconds(configState.screensaver, 150, true)
   readonly property int displaySeconds: Model.normalizedSeconds(configState.display, 0, true)
   readonly property int lockSeconds: Model.normalizedSeconds(configState.lock, 300, true)
   readonly property int sleepSeconds: Model.normalizedSeconds(configState.sleep, 0, true)
+  readonly property string sleepAction: Model.sleepAction(configState.sleepAction)
   readonly property bool displayEnabled: displaySeconds > 0
   readonly property bool sleepEnabled: sleepSeconds > 0
   // The screensaver, display-off, and sleep stages are all self-observed here so
@@ -42,7 +44,7 @@ Item {
   readonly property int displayDelaySeconds: displayEnabled ? Math.max(0, displaySeconds - firstIdleSeconds) : 0
   readonly property int sleepDelaySeconds: sleepEnabled ? Math.max(0, sleepSeconds - firstIdleSeconds) : 0
   readonly property string helperPath: {
-    var url = String(Qt.resolvedUrl("sandman.py"))
+    var url = String(Qt.resolvedUrl("sleep_guardian.py"))
     return decodeURIComponent(url.indexOf("file://") === 0 ? url.substring(7) : url)
   }
 
@@ -78,6 +80,20 @@ Item {
 
   function setSleep(seconds) {
     return runSetter("set-sleep", seconds)
+  }
+
+  function setSleepAction(action) {
+    var normalized = Model.sleepAction(action)
+    if (normalized !== String(action)) {
+      root.lastError = "Ignored an invalid sleep action"
+      return false
+    }
+    return runHelper(["set-sleep-action", normalized])
+  }
+
+  function actionAvailable(action) {
+    var entry = root.capabilityState[String(action)]
+    return !!(entry && entry.available === true)
   }
 
   function refresh() {
@@ -141,7 +157,7 @@ Item {
     }
 
     if (root.sleepEnabled) {
-      if (root.sleepDelaySeconds === 0) requestSuspend()
+      if (root.sleepDelaySeconds === 0) requestSleep()
       else sleepTimer.restart()
     }
   }
@@ -176,16 +192,23 @@ Item {
     displayOnProcess.running = true
   }
 
-  function requestSuspend() {
-    if (!root.sleepEnabled || suspendProcess.running) return
-    root.suspendPending = true
+  function requestSleep() {
+    if (!root.sleepEnabled || sleepProcess.running) return
+    if (!root.actionAvailable(root.sleepAction)) {
+      root.lastError = Model.sleepActionLabel(root.sleepAction) + " is not supported by this system"
+      root.cancelIdleCycle()
+      return
+    }
+    root.sleepPending = true
     root.lastError = ""
-    suspendProcess.running = true
+    sleepProcess.command = ["systemctl", root.sleepAction]
+    sleepProcess.running = true
   }
 
   onScreensaverSecondsChanged: cancelIdleCycle()
   onDisplaySecondsChanged: cancelIdleCycle()
   onSleepSecondsChanged: cancelIdleCycle()
+  onSleepActionChanged: cancelIdleCycle()
 
   Process {
     id: initializeProcess
@@ -196,8 +219,24 @@ Item {
     }
     Component.onCompleted: running = true
     onExited: function(exitCode) {
-      if (exitCode !== 0) root.lastError = "Could not initialize Sandman settings"
+      if (exitCode !== 0) root.lastError = "Could not initialize Sleep Guardian settings"
       configFile.reload()
+    }
+  }
+
+  Process {
+    id: capabilityProcess
+    command: ["python3", root.helperPath, "capabilities"]
+    stdout: StdioCollector {
+      waitForEnd: true
+      onStreamFinished: {
+        try { root.capabilityState = JSON.parse(String(text || "{}")) }
+        catch (error) { root.capabilityState = ({}) }
+      }
+    }
+    Component.onCompleted: running = true
+    onExited: function(exitCode) {
+      if (exitCode !== 0) root.lastError = "Could not check system sleep capabilities"
     }
   }
 
@@ -242,7 +281,7 @@ Item {
     id: sleepTimer
     interval: root.sleepDelaySeconds * 1000
     repeat: false
-    onTriggered: root.requestSuspend()
+    onTriggered: root.requestSleep()
   }
 
   Timer {
@@ -291,10 +330,9 @@ Item {
   }
 
   Process {
-    id: suspendProcess
-    command: ["systemctl", "suspend"]
+    id: sleepProcess
     onExited: function(exitCode) {
-      root.suspendPending = false
+      root.sleepPending = false
       root.cancelIdleCycle()
       if (exitCode !== 0)
         root.lastError = "Sleep was blocked by the system or an application"
@@ -302,7 +340,7 @@ Item {
   }
 
   IpcHandler {
-    target: "lgse.sandman"
+    target: "thenailedone.sleep-guardian"
 
     function status(): string {
       return JSON.stringify({
@@ -310,6 +348,8 @@ Item {
         display: root.displaySeconds,
         lock: root.lockSeconds,
         sleep: root.sleepSeconds,
+        sleepAction: root.sleepAction,
+        capabilities: root.capabilityState,
         idle: idleMonitor.isIdle,
         idleCycleRunning: root.idleCycleRunning,
         displayDelay: root.displayDelaySeconds,
@@ -317,7 +357,7 @@ Item {
         sleepDelay: root.sleepDelaySeconds,
         screensaverWindows: root.screensaverWindowCount,
         saving: root.saving,
-        suspendPending: root.suspendPending,
+        sleepPending: root.sleepPending,
         error: root.lastError
       })
     }
@@ -326,6 +366,7 @@ Item {
     function setDisplay(seconds: int): bool { return root.setDisplay(seconds) }
     function setLock(seconds: int): bool { return root.setLock(seconds) }
     function setSleep(seconds: int): bool { return root.setSleep(seconds) }
+    function setSleepAction(action: string): bool { return root.setSleepAction(action) }
     function refresh(): void { root.refresh() }
   }
 }

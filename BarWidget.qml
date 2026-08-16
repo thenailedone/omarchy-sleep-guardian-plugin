@@ -5,10 +5,10 @@ import "Model.js" as Model
 
 BarWidget {
   id: root
-  moduleName: "lgse.sandman"
+  moduleName: "thenailedone.sleep-guardian"
 
   readonly property var sandmanService: bar && bar.shell
-    ? bar.shell.serviceFor("lgse.sandman") : null
+    ? bar.shell.serviceFor("thenailedone.sleep-guardian") : null
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
   readonly property bool popoutSwitchClosing: panelLoader.item
     ? panelLoader.item.popoutSwitchClosing === true : false
@@ -51,8 +51,8 @@ BarWidget {
     bar: root.bar
     text: "󰒲"
     tooltipText: root.sandmanService
-      ? Model.statusSummary(root.sandmanService.screensaverSeconds, root.sandmanService.displaySeconds, root.sandmanService.lockSeconds, root.sandmanService.sleepSeconds)
-      : "Sandman"
+      ? Model.statusSummary(root.sandmanService.screensaverSeconds, root.sandmanService.displaySeconds, root.sandmanService.lockSeconds, root.sandmanService.sleepSeconds, root.sandmanService.sleepAction)
+      : "Sleep Guardian"
     onPressed: function(buttonCode) {
       if (buttonCode === Qt.LeftButton) root.toggle()
     }
