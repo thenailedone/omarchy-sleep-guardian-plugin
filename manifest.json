@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "thenailedone.sleep-guardian",
   "name": "Sleep Guardian",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "author": "thenailedone; based on Sandman by Pierre Berube",
   "license": "MIT",
   "description": "Manage screen, lock, suspend, hibernate, hybrid sleep, and suspend-then-hibernate timers.",

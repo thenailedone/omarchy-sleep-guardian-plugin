@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import Quickshell
 import qs.Commons
 import qs.Ui
@@ -177,13 +178,30 @@ Panel {
     PanelKeyCatcher {
       id: keyCatcher
       anchors.fill: parent
+      onMoveRequested: function(dx, dy) {
+        if (dy !== 0)
+          panelScroll.contentY = Math.max(0, Math.min(
+            panelScroll.contentY + dy * Style.space(56),
+            panelScroll.contentHeight - panelScroll.height))
+      }
       onCloseRequested: root.close()
       onTabRequested: function(direction) { root.switchPanel(direction) }
 
-      Column {
-        id: content
-        width: parent.width
-        spacing: Style.space(12)
+      Flickable {
+        id: panelScroll
+        anchors.fill: parent
+        contentWidth: width
+        contentHeight: content.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        flickableDirection: Flickable.VerticalFlick
+        interactive: contentHeight > height
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+        Column {
+          id: content
+          width: panelScroll.width
+          spacing: Style.space(12)
 
         Row {
           anchors.horizontalCenter: parent.horizontalCenter
@@ -699,6 +717,7 @@ Panel {
           font.pixelSize: Style.font.caption
           horizontalAlignment: Text.AlignHCenter
           wrapMode: Text.WordWrap
+        }
         }
       }
     }

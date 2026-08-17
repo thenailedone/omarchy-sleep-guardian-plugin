@@ -25,7 +25,9 @@ Click the Sleep Guardian icon in the bar, choose an available power action, and
 then choose a timeout. `Suspend → Hibernate` invokes systemd's native
 `suspend-then-hibernate` mode. Its transition delay comes from the system-wide
 `HibernateDelaySec=` setting; when no delay is configured systemd may use battery
-information or its documented two-hour default.
+information or its documented two-hour default. Panels that are taller than the
+available display area can be scrolled with the mouse wheel, touch gestures, or
+the Up/Down and J/K keys.
 
 State is stored in `~/.config/omarchy/sleep-guardian.json`. Screen-saver and lock
 values are also merged into `~/.config/omarchy/shell.json`; display and power
